@@ -1,4 +1,5 @@
-﻿using CRUDMoviesApp.Models;
+﻿using AutoMapper;
+using CRUDMoviesApp.Models;
 using CRUDMoviesApp.ViewModels;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -9,15 +10,17 @@ namespace CRUDMoviesApp.Controllers
     public class MoviesController : Controller
     {
         private readonly ApplicationDbContext _context;
+        private readonly IMapper _mapper;
         private readonly IToastNotification _toastNotification;
         private List<string> _allowedExtensions = new List<string> { ".jpg",".png" };
         private long _MaxAllowedPosterSize = 1048576;
 
 
-        public MoviesController(ApplicationDbContext context, IToastNotification toastNotification)
+        public MoviesController(ApplicationDbContext context, IToastNotification toastNotification,IMapper mapper)
         {
             _context = context;
             _toastNotification = toastNotification;
+            _mapper = mapper;
         }
         public async Task<IActionResult> Index()
         {
@@ -68,7 +71,14 @@ namespace CRUDMoviesApp.Controllers
 
                 await poster.CopyToAsync(dataStream);
 
-                var movies = new Movie
+
+                // _mapper.Map<dest>(src)
+                var movie = _mapper.Map<Movie>(model);
+                movie.Poster = dataStream.ToArray();
+
+                /* old mapping
+                 
+                 var movies = new Movie
                 {
                     Title = model.Title,
                     GenreId = model.GenreId,
@@ -77,7 +87,9 @@ namespace CRUDMoviesApp.Controllers
                     Storyline = model.Storyline,
                     Poster = dataStream.ToArray()
                 };
-                _context.Movies.Add(movies);
+                 */
+
+                _context.Movies.Add(movie);
                 _context.SaveChanges();
                 _toastNotification.AddSuccessToastMessage("Movie Created Successfully");
                 return RedirectToAction(nameof(Index));
@@ -96,17 +108,25 @@ namespace CRUDMoviesApp.Controllers
             if (movie == null)
                 return NotFound();
 
-            var viewModel = new MovieFormViewModel
+            // _mapper.Map<dest>(src)
+            var viewModel = _mapper.Map<MovieFormViewModel>(movie);
+            viewModel.Genres = await _context.Genres.OrderBy(m => m.Name).ToListAsync();
+
+            /*  Old Mapping
+             
+             var viewModel = new MovieFormViewModel
             {
-                Id= movie.Id,
+                Id = movie.Id,
                 Title = movie.Title,
-                Rate= movie.Rate,
+                Rate = movie.Rate,
                 Year = movie.Year,
                 GenreId = movie.GenreId,
                 Poster = movie.Poster,
                 Storyline = movie.Storyline,
                 Genres = await _context.Genres.OrderBy(m => m.Name).ToListAsync()
             };
+             */
+
 
             return View("MovieForm", viewModel);
         }
@@ -122,14 +142,30 @@ namespace CRUDMoviesApp.Controllers
 
             var movie = await _context.Movies.FindAsync(model.Id);
 
+            //To store the poster before mapping
+            var movieInDb = new Movie { Poster = movie.Poster };
+
             if (movie == null)
                 return NotFound();
 
-            movie.Title = model.Title;
+            // _mapper.Map<dest>(src)
+            //movie = _mapper.Map<Movie>(model);
+
+            // I used this to prevent the problem of not updating
+            //_mapper.Map(src, dest);
+            _mapper.Map(model, movie);
+
+            //To store the poster after mapping
+            movie.Poster = movieInDb.Poster;
+
+            /*   Old Mapping
+             movie.Title = model.Title;
             movie.GenreId = model.GenreId;
             movie.Year = model.Year;
             movie.Rate = model.Rate;
             movie.Storyline = model.Storyline;
+             */
+
 
             var files = Request.Form.Files;
 
@@ -153,6 +189,7 @@ namespace CRUDMoviesApp.Controllers
                 }
                 movie.Poster = dataStream.ToArray();
             }
+            
             _context.SaveChanges();
             _toastNotification.AddSuccessToastMessage("Movie Updated Successfully");
             return RedirectToAction(nameof(Index));
